@@ -6,11 +6,13 @@ This file creates your application.
 """
 
 from app import app, db, login_manager
-from flask import render_template, request, redirect, url_for, flash
+from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from forms import LoginForm
 from models import UserProfile
 from werkzeug.security import check_password_hash
+from forms import MyForm
+from werkzeug.utils import secure_filename
+import os, datetime
 
 ###
 # Routing for your application.
@@ -29,6 +31,66 @@ def about():
     return render_template('about.html', name="Mary Jane")
 
 
+@app.route('/profile', methods=['POST','GET'])
+def profile():
+    form = MyForm()
+    print form.validate_on_submit()
+    print form.errors
+    print request.form
+    if request.method=='POST' and form.validate_on_submit():
+        count = db.session.query(UserProfile).count()
+        location=form.location.data
+        bio=form.biography.data
+        lname=form.lastname.data
+        fname=form.firstname.data
+        mail=form.email.data
+        gender=form.gender.data
+        photograph = form.photo.data
+        date = datetime.date.today()
+        uid = 10000 + count
+        filename = str(uid)+".jpg"
+        photograph.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        user = UserProfile(id= uid,first_name=fname, last_name = lname,gender=gender,location=location,bio= bio,email=mail,created_on=date)
+        db.session.add(user)
+        db.session.commit()
+        flash('Profile created!', 'success')
+        return redirect(url_for('profiles'))
+    else:
+        return render_template('profile.html', form = form)
+        
+
+@app.route('/profiles', methods=['POST','GET'])
+def profiles():
+    users = db.session.query(UserProfile).all()
+    if request.method == 'GET':
+        return  render_template('profiles.html', users = users)
+    elif request.method == "POST" and request.headers['Content-Type'] == "application/json":
+        users_list = []
+        for user in users:
+            users_list += [{"username": user.first_name+user.get_id, "userid":user.get_id}]
+        user_json = {"users":users_list}
+        return jsonify(user_json)
+    else:
+        flash("Unable to get request")
+        return redirect(url_for('home'))
+        
+
+@app.route('/userprofile/<userid>')
+def user(userid):
+    user = UserProfile.query.filter_by(id = userid ).first()
+    if request.method=='GET':
+        return render_template('userprofile.html', user =user )
+    elif request.method == "POST" and request.headers['Content-Type'] == "application/json":
+        user_json = {}
+        user_json["userid"] = user.id
+        user_json["username"] = user.first_name + user.last_name
+        user_json["image"] = user.id + '.jpg'
+        user_json["gender"] = user.gender
+        user_json["age"] = user.age
+        user_json["profile_created_on"] = user.date
+        return jsonify(user_json)
+    return render_template('userprofile.html')
+    
 @app.route('/secure-page')
 @login_required
 def secure_page():
